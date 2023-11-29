@@ -9,7 +9,8 @@
 # This Python file uses the following encoding: utf-8
 import sys, os
 from PySide2.QtWidgets import QApplication, QMainWindow, QFileDialog, QCheckBox, QMessageBox, QTableWidgetItem
-from PySide2.QtCore import Qt, QThread
+from PySide2.QtCore import Qt
+from PySide2.QtCore import Signal, QObject,Slot #跨线程消息机制
 from uiWindow import Ui_MainWindow
 
 import codecs 
@@ -24,12 +25,21 @@ GB2312 = 2
 FILE = 0
 FOLDER = 1
 
+class Communicate(QObject):
+    speak_word = Signal(str)
 class MainWindow(QMainWindow):
+
+    @Slot(str)
+    def say_something(self,stuff):
+        # print(stuff)
+        self.ui.textBrowser.append(stuff)
+    signal = Communicate()        
     def __init__(self):
         super(MainWindow, self).__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.initForm()
+        self.signal = Communicate()
         self.connectSlots()
 
         self.__path = None                                  #处理的文件/文件夹路径
@@ -40,12 +50,15 @@ class MainWindow(QMainWindow):
         self.__fileOrFolder = FOLDER                        #默认处理文件夹
         self.__mWorker = None                               #私有线程变量
 
+
+
     def initForm(self):
         self.ui.tableWidget.setColumnCount(2)
         self.ui.tableWidget.setHorizontalHeaderLabels(["文件名","转换前类型"])
         self.ui.tableWidget.horizontalHeader().setStretchLastSection(True)
         self.ui.tableWidget.setColumnWidth(0, 165)
         self.ui.tableWidget.setColumnWidth(1, 70)
+
 
     def setFilePath(self, path):
         self.__path = path
@@ -75,11 +88,13 @@ class MainWindow(QMainWindow):
         for index, item in enumerate(fileTypeArr):
             item.stateChanged.connect(self.onFileTypeChanged)
         self.ui.btnTransmit.clicked.connect(self.onTransmitClicked)
+        self.signal.speak_word.connect(self.say_something)
+        self.signal.speak_word.emit("started!")
 
     def onOpenFileClicked(self):
         fileName = QFileDialog.getOpenFileName(self, "", ".")
         if (fileName is None):
-            self.ui.textBrowser.append("open file failed: fileName is None!")
+            self.signal.speak_word.emit("open file failed: fileName is None!")
             return
 
         self.setFilePath(fileName[0])
@@ -89,7 +104,7 @@ class MainWindow(QMainWindow):
     def onOpenFolderClicked(self):
         folderName = QFileDialog.getExistingDirectory(self, "", ".")
         if (folderName is None):
-            self.ui.textBrowser.append("open folder failed:folderName is None!")
+            self.signal.speak_word.emit("open folder failed:folderName is None!")
             return
         
         self.setFilePath(folderName)
@@ -103,7 +118,7 @@ class MainWindow(QMainWindow):
 
     def onCbEncodeIndexChanged(self, index):
         self.setEncodeType(self.__encodeTypeArr[index])
-        self.ui.textBrowser.append("Set encodeType: %s" % self.__encodeTypeArr[index])
+        self.signal.speak_word.emit("Set encodeType: %s" % self.__encodeTypeArr[index])
     
     def onCustomEncodeCheck(self):
         customStr = self.ui.leditCustomEncode.text()
@@ -156,6 +171,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error!", "请设置需要处理的文件后缀格式!")
                 return
             self.enableWidgets(False)
+            # self.explore(self.__path)
             self.__mWorker = threading.Thread(target=self.explore, args=(self.__path,))
             self.__mWorker.start()
         else:
@@ -173,6 +189,8 @@ class MainWindow(QMainWindow):
                     for item in self.__fileSuffix:
                         if(item == suffix):
                             path = os.path.join(root,file)
+
+                            print(path)
                             self.convert(path, self.__encodeType)
                 if self.__customFileSuffix:
                     for item in self.__customFileSuffix:
@@ -180,7 +198,7 @@ class MainWindow(QMainWindow):
                             path = os.path.join(root,file)
                             self.convert(path, self.__encodeType)
 
-        self.ui.textBrowser.append("explore over!")
+        self.signal.speak_word.emit("explore over!")
         self.enableWidgets(True)
 
     def convert(self, filePath, out_enc="UTF-8-SIG"):
@@ -190,9 +208,9 @@ class MainWindow(QMainWindow):
 
             if source_encoding != None:
                 if source_encoding == out_enc:
-                    # self.ui.textBrowser.append("此文件格式无需转换: %s" % filePath)
+                    self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)
                     return
-                
+                self.signal.speak_word.emit("正在处理: %s" % filePath)
                 rouCount = self.ui.tableWidget.rowCount()
                 self.ui.tableWidget.insertRow(rouCount)
                 self.ui.tableWidget.setItem(rouCount, 0, QTableWidgetItem(filePath.split('\\')[-1]))
@@ -203,9 +221,9 @@ class MainWindow(QMainWindow):
                 content = content.decode(source_encoding).encode(out_enc)
                 codecs.open(filePath,'wb').write(content)
             else :
-                self.ui.textBrowser.append("此文件无法识别编码: %s" % filePath)
+                self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
         except Exception as err: 
-            self.ui.textBrowser.append("%s:%s"%(filePath, err))
+            self.signal.speak_word.emit("%s:%s"%(filePath, err))
     
 
 if __name__ == "__main__":
