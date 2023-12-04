@@ -17,6 +17,7 @@ import codecs
 import chardet 
 import threading
 
+from charamel import Detector
 #转换后的编码类型
 UTF8_BOM = 0
 UTF8 = 1
@@ -27,7 +28,7 @@ FOLDER = 1
 
 class Communicate(QObject):
     speak_word = Signal(str)
-    add_row = Signal(str,str,str)
+    add_row = Signal(str,str,str,str)
 class MainWindow(QMainWindow):
 
     @Slot(str)
@@ -35,16 +36,18 @@ class MainWindow(QMainWindow):
         # print(stuff)
         self.ui.textBrowser.append(stuff)
     @Slot(str,str,str)
-    def slotTableWidgetAddRow(self,filename,source_encoding,result):
+    def slotTableWidgetAddRow(self,filename,source_encoding,decoding,result):
         # print(stuff)
         rouCount = self.ui.tableWidget.rowCount()
         self.ui.tableWidget.insertRow(rouCount)
         self.ui.tableWidget.setItem(rouCount, 0, QTableWidgetItem(filename))
         self.ui.tableWidget.setItem(rouCount, 1, QTableWidgetItem(source_encoding))
-        self.ui.tableWidget.setItem(rouCount, 2, QTableWidgetItem(result))
+        self.ui.tableWidget.setItem(rouCount, 2, QTableWidgetItem(decoding))
+        self.ui.tableWidget.setItem(rouCount, 3, QTableWidgetItem(result))
         self.ui.tableWidget.item(rouCount, 0).setTextAlignment(Qt.AlignCenter)
         self.ui.tableWidget.item(rouCount, 1).setTextAlignment(Qt.AlignCenter)
         self.ui.tableWidget.item(rouCount, 2).setTextAlignment(Qt.AlignCenter)
+        self.ui.tableWidget.item(rouCount, 3).setTextAlignment(Qt.AlignCenter)
     signal = Communicate()
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -65,12 +68,13 @@ class MainWindow(QMainWindow):
 
 
     def initForm(self):
-        self.ui.tableWidget.setColumnCount(3)
-        self.ui.tableWidget.setHorizontalHeaderLabels(["文件名","转换前类型","结果"])
+        self.ui.tableWidget.setColumnCount(4)
+        self.ui.tableWidget.setHorizontalHeaderLabels(["文件名","识别类型","解码方法","结果"])
         # self.ui.tableWidget.horizontalHeader().setStretchLastSection(True)
         self.ui.tableWidget.setColumnWidth(0, 165)
         self.ui.tableWidget.setColumnWidth(1, 70)
         self.ui.tableWidget.setColumnWidth(2, 70)
+        self.ui.tableWidget.setColumnWidth(3, 70)
 
     def setFilePath(self, path):
         self.__path = path
@@ -213,22 +217,45 @@ class MainWindow(QMainWindow):
         self.signal.speak_word.emit("explore over!")
         self.enableWidgets(True)
 
+    def convert_true(self, content,filePath, source_encoding,decoding,out_enc):
+        try:
+            self.signal.speak_word.emit("正在处理: %s" % filePath)
+            content2 = content.decode(decoding).encode(out_enc)
+            codecs.open(filePath,'wb').write(content2)
+            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decoding,"成功")
+            return True
+
+        except Exception as err:
+            self.signal.speak_word.emit("%s:%s"%(filePath, err))
+            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decoding,"转换失败")
+            return False
+
     def convert(self, filePath, out_enc="UTF-8-SIG"):
         try: 
             content = codecs.open(filePath,'rb').read()
-            source_encoding = chardet.detect(content)['encoding']
-
-            if source_encoding != None:
-                if source_encoding == out_enc:
-                    self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)
-                    return
-                self.signal.speak_word.emit("正在处理: %s" % filePath)
-                content = content.decode(source_encoding).encode(out_enc)
-                codecs.open(filePath,'wb').write(content)
-                self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,"成功")
-            else :
+            usenewmethod = True
+            if usenewmethod == False:
+                source_encoding = chardet.detect(content)['encoding']
+            else:
+                detector = Detector()                         
+                source_encoding = detector.detect(content)
+                
+            if source_encoding == out_enc:
+                self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)
+                return
+            elif source_encoding == None:
                 self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
                 self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别")
+
+            if usenewmethod ==False:
+                if source_encoding == "utf-8":
+                    self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+                else:
+                    if self.convert_true(content,filePath,source_encoding,"GB2312",out_enc)!=True :
+                        self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+            else:
+                self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+
         except Exception as err: 
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
             self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,"转换失败")
