@@ -60,11 +60,18 @@ class MainWindow(QMainWindow):
         self.__path = None                                  #处理的文件/文件夹路径
         self.__fileSuffix = ['.c', '.h', '.cpp', '.hpp']    #内置可勾选的文件类型
         self.__customFileSuffix = []                        #自定义的文件类型
-        self.__encodeType = 'UTF-8-SIG'                     #默认的编码类型
-        self.__encodeTypeArr = ['UTF-8-SIG', 'utf-8', 'GB2312']
+
+        self.usenewmethod = True
+        if self.usenewmethod == False:
+            self.__encodeType = 'UTF-8-SIG'                     #默认的编码类型
+            self.__encodeTypeArr = ['UTF-8-SIG', 'utf-8', 'GB2312']
+        else:
+            self.__encodeType = 'utf_8_sig'                     #默认的编码类型
+            self.__encodeTypeArr = ['utf_8_sig', 'utf_8', 'gb2312']
+        
         self.__fileOrFolder = FOLDER                        #默认处理文件夹
         self.__mWorker = None                               #私有线程变量
-
+        self.detector = Detector()
 
 
     def initForm(self):
@@ -230,15 +237,14 @@ class MainWindow(QMainWindow):
             self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decoding,"转换失败")
             return False
 
-    def convert(self, filePath, out_enc="UTF-8-SIG"):
+    def convert(self, filePath, out_enc):
         try: 
             content = codecs.open(filePath,'rb').read()
-            usenewmethod = True
-            if usenewmethod == False:
+            self.usenewmethod = True
+            if self.usenewmethod == False:
                 source_encoding = chardet.detect(content)['encoding']
-            else:
-                detector = Detector()                         
-                source_encoding = detector.detect(content)
+            else:                                         
+                source_encoding = self.detector.detect(content)
                 
             if source_encoding == out_enc:
                 self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)
@@ -247,7 +253,7 @@ class MainWindow(QMainWindow):
                 self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
                 self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别")
 
-            if usenewmethod ==False:
+            if self.usenewmethod ==False:
                 if source_encoding == "utf-8":
                     self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
                 else:
