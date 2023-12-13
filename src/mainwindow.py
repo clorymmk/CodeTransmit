@@ -63,8 +63,8 @@ class MainWindow(QMainWindow):
 
         self.usenewmethod = True
         if self.usenewmethod == False:
-        self.__encodeType = 'UTF-8-SIG'                     #默认的编码类型
-        self.__encodeTypeArr = ['UTF-8-SIG', 'utf-8', 'GB2312']
+            self.__encodeType = 'UTF-8-SIG'                     #默认的编码类型
+            self.__encodeTypeArr = ['UTF-8-SIG', 'utf-8', 'GB2312']
         else:
             self.__encodeType = 'utf_8_sig'                     #默认的编码类型
             self.__encodeTypeArr = ['utf_8_sig', 'utf_8', 'gb2312']
@@ -237,36 +237,51 @@ class MainWindow(QMainWindow):
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
             self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decoding,"转换失败")
             return False
-
-    def convert(self, filePath, out_enc):
+    def convert_chardet(self, filePath, out_enc): # chardet识别的编码容易出错，总是拿GB2312试一试
         try: 
             content = codecs.open(filePath,'rb').read()
-            self.usenewmethod = True
-            if self.usenewmethod == False:
             source_encoding = chardet.detect(content)['encoding']
-            else:                                         
-                source_encoding = self.detector.detect(content)
-
-                if source_encoding == out_enc:
+            if source_encoding == out_enc:
                 self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)
-                    return
-            elif source_encoding == None:
+            elif source_encoding == "utf-8":
+                self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+            elif source_encoding ==None:
                 self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
                 self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别")
-
-            if self.usenewmethod ==False:
-                if source_encoding == "utf-8":
+                self.convert_true(content,filePath,source_encoding,"GB2312",out_enc) #无法识别的编码也用GB2312试一试
+            else:
+                if self.convert_true(content,filePath,source_encoding,"GB2312",out_enc)!=True :
                     self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
-                else:
-                    if self.convert_true(content,filePath,source_encoding,"GB2312",out_enc)!=True :
-                        self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+
+
+        except Exception as err: 
+            self.signal.speak_word.emit("%s:%s"%(filePath, err))
+            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,"转换失败")
+    # charmel更准，更不容易编码识别出错，所以就不无脑先尝试GB2312了。但也有编码识别出错的问题。需要自己检查表格里的编码格式
+    def convert_charamel(self, filePath, out_enc): 
+        try: 
+            content = codecs.open(filePath,'rb').read()
+                              
+            source_encoding = self.detector.detect(content)
+
+            if source_encoding == out_enc:
+                self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)                
+            elif source_encoding == None:
+                self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
+                self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别")                
             else:
                 self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
 
         except Exception as err: 
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
             self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,"转换失败")
-    
+
+    def convert(self, filePath, out_enc):
+        self.usenewmethod = True
+        if self.usenewmethod == True:
+            self.convert_charamel(filePath,out_enc)
+        else:
+            self.convert_chardet(filePath,out_enc)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
