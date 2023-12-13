@@ -72,7 +72,7 @@ class MainWindow(QMainWindow):
         self.__fileOrFolder = FOLDER                        #默认处理文件夹
         self.__mWorker = None                               #私有线程变量
         self.detector = Detector()
-
+        # self.detector = Detector(min_confidence=0.5)        
 
     def initForm(self):
         self.ui.tableWidget.setColumnCount(4)
@@ -247,7 +247,7 @@ class MainWindow(QMainWindow):
                 self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
             elif source_encoding ==None:
                 self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
-                self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别")
+                self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别","无法识别")
                 self.convert_true(content,filePath,source_encoding,"GB2312",out_enc) #无法识别的编码也用GB2312试一试
             else:
                 if self.convert_true(content,filePath,source_encoding,"GB2312",out_enc)!=True :
@@ -256,28 +256,42 @@ class MainWindow(QMainWindow):
 
         except Exception as err: 
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
-            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,"转换失败")
-    # charmel更准，更不容易编码识别出错，所以就不无脑先尝试GB2312了。但也有编码识别出错的问题。需要自己检查表格里的编码格式
+            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,out_enc,"转换失败")
+    # charmel更准，更不容易编码识别出错，所以就不无脑先尝试GB2312了。
+    # 在第一名可信度不高的时候，检查topk是否有gb2312
+    # 但也有编码识别出错的问题。需要自己检查表格里的编码格式
     def convert_charamel(self, filePath, out_enc): 
         try: 
-            content = codecs.open(filePath,'rb').read()
-                              
-            source_encoding = self.detector.detect(content)
+            content = codecs.open(filePath,'rb').read()                              
+            source_encoding = None
+            decode_encoding = None
+            topk = 5            
+            minTrustThreshold = 0.1
+            source_encoding_probes = self.detector.probe(content, top=topk)
+            if len(source_encoding_probes)==0:
+                source_encoding = None
+            else:
+                source_encoding = source_encoding_probes[0][0]
+                decode_encoding = source_encoding            
+            if source_encoding_probes[0][1]<minTrustThreshold: #如果第一名的可信度不够高，则找一找topk有没有gb2312，有则设为gb2312
+                for i in range(len(source_encoding_probes)):
+                    if source_encoding_probes[i][0]=='gb2312':
+                        decode_encoding='gb2312'
+                        break
 
             if source_encoding == out_enc:
                 self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)                
             elif source_encoding == None:
                 self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
-                self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别")                
+                self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别","无法识别")                
             else:
-                self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+                self.convert_true(content,filePath,source_encoding,decode_encoding,out_enc)
 
         except Exception as err: 
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
-            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,"转换失败")
+            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decode_encoding,"转换失败")
 
-    def convert(self, filePath, out_enc):
-        self.usenewmethod = True
+    def convert(self, filePath, out_enc):        
         if self.usenewmethod == True:
             self.convert_charamel(filePath,out_enc)
         else:
