@@ -14,14 +14,13 @@ from PySide2.QtCore import Signal, QObject,Slot #跨线程消息机制
 from uiWindow import Ui_MainWindow
 
 import codecs 
-import chardet 
 import threading
 
 from charamel import Detector
 #转换后的编码类型
-UTF8_BOM = 0
-UTF8 = 1
-GB2312 = 2
+# UTF8_BOM = 0
+# UTF8 = 1
+# GB2312 = 2
 
 FILE = 0
 FOLDER = 1
@@ -61,13 +60,8 @@ class MainWindow(QMainWindow):
         self.__fileSuffix = ['.c', '.h', '.cpp', '.hpp']    #内置可勾选的文件类型
         self.__customFileSuffix = []                        #自定义的文件类型
 
-        self.usenewmethod = True
-        if self.usenewmethod == False:
-            self.__encodeType = 'UTF-8-SIG'                     #默认的编码类型
-            self.__encodeTypeArr = ['UTF-8-SIG', 'utf-8', 'GB2312']
-        else:
-            self.__encodeType = 'utf_8_sig'                     #默认的编码类型
-            self.__encodeTypeArr = ['utf_8_sig', 'utf_8', 'gb2312']
+        self.__encodeType = 'utf_8_sig'                     #默认的编码类型
+        self.__encodeTypeArr = ['utf_8_sig', 'utf_8', 'gb2312']
         
         self.__fileOrFolder = FOLDER                        #默认处理文件夹
         self.__mWorker = None                               #私有线程变量
@@ -237,26 +231,13 @@ class MainWindow(QMainWindow):
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
             self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decoding,"转换失败")
             return False
-    def convert_chardet(self, filePath, out_enc): # chardet识别的编码容易出错，总是拿GB2312试一试
-        try: 
-            content = codecs.open(filePath,'rb').read()
-            source_encoding = chardet.detect(content)['encoding']
-            if source_encoding == out_enc:
-                self.signal.speak_word.emit("此文件格式无需转换: %s" % filePath)
-            elif source_encoding == "utf-8":
-                self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
-            elif source_encoding ==None:
-                self.signal.speak_word.emit("此文件无法识别编码: %s" % filePath)
-                self.signal.add_row.emit(filePath.split('\\')[-1],"无法识别","无法识别","无法识别")
-                self.convert_true(content,filePath,source_encoding,"GB2312",out_enc) #无法识别的编码也用GB2312试一试
-            else:
-                if self.convert_true(content,filePath,source_encoding,"GB2312",out_enc)!=True :
-                    self.convert_true(content,filePath,source_encoding,source_encoding,out_enc)
+    def detect_bom(self, content):
+        if content.startswith(b'\xef\xbb\xbf'):
+            return 'utf_8_sig'
+        elif content.startswith(b'\xff\xfe') or content.startswith(b'\xfe\xff'):
+            return 'utf_16'
+        return None
 
-
-        except Exception as err: 
-            self.signal.speak_word.emit("%s:%s"%(filePath, err))
-            self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,out_enc,"转换失败")
     # charmel更准，更不容易编码识别出错，所以就不无脑先尝试GB2312了。
     # 在第一名可信度不高的时候，检查topk是否有gb2312
     # 但也有编码识别出错的问题。需要自己检查表格里的编码格式
@@ -265,15 +246,21 @@ class MainWindow(QMainWindow):
             content = codecs.open(filePath,'rb').read()                              
             source_encoding = None
             decode_encoding = None
+            bom = self.detect_bom(content)
             topk = 5            
             minTrustThreshold = 0.1
             source_encoding_probes = self.detector.probe(content, top=topk)
             if len(source_encoding_probes)==0:
                 source_encoding = None
             else:
-                source_encoding = source_encoding_probes[0][0]
-                decode_encoding = source_encoding            
-            if source_encoding_probes[0][1]<minTrustThreshold: #如果第一名的可信度不够高，则找一找topk有没有gb2312，有则设为gb2312
+                if bom:
+                    source_encoding = bom
+                else:
+                    source_encoding = source_encoding_probes[0][0]
+                    if source_encoding == 'utf_8_sig':
+                        source_encoding = 'utf_8'
+                decode_encoding = source_encoding
+            if not bom and source_encoding_probes[0][1]<minTrustThreshold: #如果第一名的可信度不够高，则找一找topk有没有gb2312，有则设为gb2312
                 for i in range(len(source_encoding_probes)):
                     if source_encoding_probes[i][0]=='gb2312':
                         decode_encoding='gb2312'
@@ -291,11 +278,8 @@ class MainWindow(QMainWindow):
             self.signal.speak_word.emit("%s:%s"%(filePath, err))
             self.signal.add_row.emit(filePath.split('\\')[-1],source_encoding,decode_encoding,"转换失败")
 
-    def convert(self, filePath, out_enc):        
-        if self.usenewmethod == True:
-            self.convert_charamel(filePath,out_enc)
-        else:
-            self.convert_chardet(filePath,out_enc)
+    def convert(self, filePath, out_enc):   
+        self.convert_charamel(filePath,out_enc)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
